@@ -63,6 +63,76 @@ func Impl(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsock.
 		log.Fatal(err)
 	}
 
+	sendRequest := func() {
+		var localIP tcpip.Address
+		for _, ip := range ipstack.AllAddresses()[nicID] {
+			if ip.Protocol == ipv4.ProtocolNumber {
+				localIP = ip.AddressWithPrefix.Address.To4()
+				break
+			}
+		}
+
+		if localIP == "" {
+			log.Fatalf("No IPv4 local addresses!")
+		}
+
+		/*
+			// required for UDP
+			localAddress := tcpip.FullAddress{
+				NIC:  nicID,
+				Addr: localIP,
+				Port: 0,
+			}*/
+		remoteAddress := tcpip.FullAddress{
+			NIC:  nicID,
+			Addr: localIP,
+			Port: 4242,
+		}
+
+		writerCompletedCh := make(chan struct{})
+
+		/*conn, connErr := gonet.DialUDP(ipstack, &localAddress, &remoteAddress, ipv4.ProtocolNumber)
+		if connErr != nil {
+			log.Fatalf("netstack could not dial UDP, error: %v", connErr)
+		}*/
+		conn, cerr := gonet.DialTCP(ipstack, remoteAddress, ipv4.ProtocolNumber)
+		if cerr != nil {
+			log.Fatalf("netstack: could not dial, error %v", cerr)
+		} else {
+			logf("netstack: dialed!")
+		}
+
+		go func() {
+			defer close(writerCompletedCh)
+
+			_, err := conn.Write([]byte("Hello world!"))
+
+			if err != nil {
+				logf("netstack writer: could not write message")
+			}
+		}()
+
+		for {
+			buf := make([]byte, 1500)
+			logf("netstack: about to read")
+			n, err := conn.Read(buf)
+			logf("netstack: did read")
+			if err != nil {
+				logf("nestack: cannot read further, exiting with message %v", err)
+				break
+			} else {
+				logf("netstack: received data: % x", buf[:n])
+			}
+		}
+
+		<-writerCompletedCh
+
+		conn.Close()
+	}
+
+	requestSent := false
+	readyToSendRequest := make(chan struct{})
+
 	e.AddNetworkMapCallback(func(nm *netmap.NetworkMap) {
 		oldIPs := make(map[tcpip.Address]bool)
 		for _, ip := range ipstack.AllAddresses()[nicID] {
@@ -70,7 +140,10 @@ func Impl(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsock.
 		}
 		newIPs := make(map[tcpip.Address]bool)
 		for _, ip := range nm.Addresses {
-			newIPs[tcpip.Address(ip.IPNet().IP)] = true
+			// no IPv6 rn
+			if ip.IP.Is4() {
+				newIPs[tcpip.Address(ip.IPNet().IP)] = true
+			}
 		}
 
 		ipsToBeAdded := make(map[tcpip.Address]bool)
@@ -102,6 +175,14 @@ func Impl(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsock.
 				logf("netstack: registered IP %s", ip)
 			}
 		}
+
+		if !requestSent {
+			go func() {
+				<-readyToSendRequest
+				sendRequest()
+			}()
+			requestSent = true
+		}
 	})
 
 	// Add 0.0.0.0/0 default route.
@@ -128,7 +209,33 @@ func Impl(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsock.
 		go echo(c, e, mc)
 
 	})
+
+	udpFwd := udp.NewForwarder(ipstack, func(r *udp.ForwarderRequest) {
+		logf("XXX UDP ForwarderRequest: %v", r)
+		var wq waiter.Queue
+		ep, err := r.CreateEndpoint(&wq)
+		if err != nil {
+			logf("Could not create endpoint, exiting")
+			return
+		}
+		c := gonet.NewUDPConn(ipstack, &wq, ep)
+		go func() {
+			//fmt.Fprintf(c, "Hi, %s! Echoing, hopefully...", c.RemoteAddr())
+			buf := make([]byte, 1500)
+			for {
+				n, err := c.Read(buf)
+				if err != nil {
+					logf("netstack UDP fin: %v", err)
+					break
+				}
+				c.Write(buf[:n])
+			}
+			c.Close()
+		}()
+	})
+
 	ipstack.SetTransportProtocolHandler(tcp.ProtocolNumber, fwd.HandlePacket)
+	ipstack.SetTransportProtocolHandler(udp.ProtocolNumber, udpFwd.HandlePacket)
 
 	go func() {
 		for {
@@ -171,6 +278,9 @@ func Impl(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsock.
 		linkEP.InjectInbound(pn, packetBuf)
 		return filter.Accept
 	}
+
+	close(readyToSendRequest)
+
 	return nil
 }
 
