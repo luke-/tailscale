@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strconv"
@@ -250,9 +251,26 @@ func (ns *Impl) acceptTCP(r *tcp.ForwarderRequest) {
 		r.Complete(true)
 		return
 	}
+	localAddr, err := ep.GetLocalAddress()
+	if err != nil {
+		r.Complete(true)
+		return
+	}
 	r.Complete(false)
 	c := gonet.NewTCPConn(&wq, ep)
-	go echoTCP(c, ns.e, ns.mc)
+	go ns.forwardTCP(c, net.JoinHostPort("100.101.102.103", strconv.Itoa(int(localAddr.Port))))
+}
+
+func (ns *Impl) forwardTCP(client *gonet.TCPConn, address string) {
+	ns.logf("netstack: forwarding to address %s", address)
+	server, err := ns.dialTCP(address)
+	if err != nil {
+		ns.logf("netstack: could not connect to server %s: %s", address, err)
+		client.Close()
+		return
+	}
+	go io.Copy(server, client)
+	go io.Copy(client, server)
 }
 
 func (ns *Impl) acceptUDP(r *udp.ForwarderRequest) {
