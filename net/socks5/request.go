@@ -6,7 +6,7 @@ import (
 	"net"
 )
 
-const MaxRequestPacketSize int = 261
+const maxRequestPacketSize int = 261
 
 // Request reperesents data contained within a SOCKS5
 // connection request packet.
@@ -31,25 +31,25 @@ func RequestFromPacket(pkt []byte) (*Request, error) {
 
 	if addrType == IPv4 {
 		if len(pkt) < minPacketSize+4 {
-			return nil, fmt.Errorf("Packet too small to contain IPv4 address")
+			return nil, fmt.Errorf("packet too small to contain IPv4 address")
 		}
 		destination = net.IP(pkt[4:8]).String()
 		port = binary.BigEndian.Uint16(pkt[8:10])
 	} else if addrType == DomainName {
 		dstSize := int(pkt[4])
 		if len(pkt) < minPacketSize+dstSize+1 {
-			return nil, fmt.Errorf("Packet too small to contain FQDN of length %v", dstSize)
+			return nil, fmt.Errorf("packet too small to contain FQDN of length %v", dstSize)
 		}
 		destination = string(pkt[5 : 5+dstSize])
 		port = binary.BigEndian.Uint16(pkt[4+dstSize : 4+dstSize+2])
 	} else if addrType == IPv6 {
 		if len(pkt) < minPacketSize+16 {
-			return nil, fmt.Errorf("Packet too small to contain IPv6 address")
+			return nil, fmt.Errorf("packet too small to contain IPv6 address")
 		}
 		destination = net.IP(pkt[4:20]).String()
 		port = binary.BigEndian.Uint16(pkt[20:22])
 	} else {
-		return nil, fmt.Errorf("Unsupported address type")
+		return nil, fmt.Errorf("unsupported address type")
 	}
 
 	return &Request{
