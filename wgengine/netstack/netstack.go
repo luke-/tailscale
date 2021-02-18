@@ -109,7 +109,7 @@ func (ns *Impl) updateIPs(nm *netmap.NetworkMap) {
 	}
 	newIPs := make(map[tcpip.Address]bool)
 	for _, ip := range nm.Addresses {
-		newIPs[tcpip.Address(ip.IPNet().IP)] = true
+		newIPs[tcpip.Address(ip.IP.IPAddr().IP)] = true
 	}
 
 	ipsToBeAdded := make(map[tcpip.Address]bool)
