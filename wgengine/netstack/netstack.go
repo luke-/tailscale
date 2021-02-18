@@ -11,7 +11,6 @@ package netstack
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -30,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
-	"inet.af/netaddr"
 	"tailscale.com/net/packet"
 	"tailscale.com/types/logger"
 	"tailscale.com/types/netmap"
@@ -163,44 +161,6 @@ func (ns *Impl) dialTCP(address string) (*gonet.TCPConn, error) {
 	return gonet.DialTCP(ns.ipstack, remoteAddress, ipType)
 }
 
-func (ns *Impl) dialUDP(address string) (*gonet.UDPConn, error) {
-	var localIP tcpip.Address
-	var ipType tcpip.NetworkProtocolNumber
-	for _, ip := range ns.ipstack.AllAddresses()[nicID] {
-		if ip.Protocol == ipv4.ProtocolNumber {
-			localIP = ip.AddressWithPrefix.Address.To4()
-			ipType = ipv4.ProtocolNumber
-			break
-		} else if ip.Protocol == ipv6.ProtocolNumber {
-			localIP = ip.AddressWithPrefix.Address
-			ipType = ipv6.ProtocolNumber
-			break
-		}
-	}
-	if localIP == "" {
-		return nil, errors.New("no IPv4/IPv6 local addresses")
-	}
-
-	remoteIP, remotePortStr, err := net.SplitHostPort(address)
-	remotePort, _ := strconv.Atoi(remotePortStr)
-	if err != nil {
-		return nil, errors.New("could not parse IP:port: " + err.Error())
-	}
-
-	localAddress := tcpip.FullAddress{
-		NIC:  nicID,
-		Addr: localIP,
-		Port: 0,
-	}
-	remoteAddress := tcpip.FullAddress{
-		NIC:  nicID,
-		Addr: tcpip.Address(net.ParseIP(remoteIP)),
-		Port: uint16(remotePort),
-	}
-
-	return gonet.DialUDP(ns.ipstack, &localAddress, &remoteAddress, ipType)
-}
-
 func (ns *Impl) injectOutbound() {
 	for {
 		packetInfo, ok := ns.linkEP.ReadContext(context.Background())
@@ -283,28 +243,6 @@ func (ns *Impl) acceptUDP(r *udp.ForwarderRequest) {
 	}
 	c := gonet.NewUDPConn(ns.ipstack, &wq, ep)
 	go echoUDP(c)
-}
-
-func echoTCP(c *gonet.TCPConn, e wgengine.Engine, mc *magicsock.Conn) {
-	defer c.Close()
-	src, _ := netaddr.FromStdIP(c.RemoteAddr().(*net.TCPAddr).IP)
-	who := ""
-	if n, u, ok := mc.WhoIs(src); ok {
-		who = fmt.Sprintf("%v from %v", u.DisplayName, n.Name)
-	}
-	fmt.Fprintf(c, "Hello, %s! Thanks for connecting to me on port %v (Try other ports too!)\nEchoing...\n",
-		who,
-		c.LocalAddr().(*net.TCPAddr).Port)
-	buf := make([]byte, 1500)
-	for {
-		n, err := c.Read(buf)
-		if err != nil {
-			log.Printf("Err: %v", err)
-			break
-		}
-		c.Write(buf[:n])
-	}
-	log.Print("Connection closed")
 }
 
 func echoUDP(c *gonet.UDPConn) {
