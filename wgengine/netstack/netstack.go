@@ -63,8 +63,8 @@ func Create(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsoc
 		return nil, errors.New("nil Engine")
 	}
 	ipstack := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6},
 	})
 	const mtu = 1500
 	linkEP := channel.New(512, mtu, "")
@@ -72,10 +72,15 @@ func Create(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsoc
 		return nil, errors.New("could not create netstack NIC: " + err.String())
 	}
 	// Add 0.0.0.0/0 default route.
-	subnet, _ := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", 4)), tcpip.AddressMask(strings.Repeat("\x00", 4)))
+	ipv4Subnet, _ := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", 4)), tcpip.AddressMask(strings.Repeat("\x00", 4)))
+	ipv6Subnet, _ := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", 16)), tcpip.AddressMask(strings.Repeat("\x00", 16)))
 	ipstack.SetRouteTable([]tcpip.Route{
 		{
-			Destination: subnet,
+			Destination: ipv4Subnet,
+			NIC:         nicID,
+		},
+		{
+			Destination: ipv6Subnet,
 			NIC:         nicID,
 		},
 	})
@@ -132,7 +137,12 @@ func (ns *Impl) updateIPs(nm *netmap.NetworkMap) {
 		}
 	}
 	for ip := range ipsToBeAdded {
-		err := ns.ipstack.AddAddress(nicID, ipv4.ProtocolNumber, ip)
+		var err *tcpip.Error
+		if ip.To4() == "" {
+			err = ns.ipstack.AddAddress(nicID, ipv6.ProtocolNumber, ip)
+		} else {
+			err = ns.ipstack.AddAddress(nicID, ipv4.ProtocolNumber, ip)
+		}
 		if err != nil {
 			ns.logf("netstack: could not register IP %s: %v", ip, err)
 		}
