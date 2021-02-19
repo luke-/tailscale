@@ -39,6 +39,9 @@ import (
 	"tailscale.com/wgengine/tstun"
 )
 
+// Impl contains the state for the netstack implementation,
+// and implements wgengine.FakeImpl to act as a userspace network
+// stack when Tailscale is running in fake mode.
 type Impl struct {
 	ipstack *stack.Stack
 	linkEP  *channel.Endpoint
@@ -50,6 +53,7 @@ type Impl struct {
 
 const nicID = 1
 
+// Create creates and populates a new Impl.
 func Create(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsock.Conn) (wgengine.FakeImpl, error) {
 	if mc == nil {
 		return nil, errors.New("nil magicsock.Conn")
@@ -96,6 +100,8 @@ func Create(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsoc
 	return ns, nil
 }
 
+// Run sets up all the handlers so netstack can start working. Implements
+// wgengine.FakeImpl.
 func (ns *Impl) Run() error {
 	ns.e.AddNetworkMapCallback(ns.updateIPs)
 	tcpFwd := tcp.NewForwarder(ns.ipstack, 0, 16, ns.acceptTCP)
