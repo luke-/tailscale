@@ -11,6 +11,7 @@ package netstack
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -134,6 +135,8 @@ func (ns *Impl) updateIPs(nm *netmap.NetworkMap) {
 		err := ns.ipstack.RemoveAddress(nicID, ip)
 		if err != nil {
 			ns.logf("netstack: could not deregister IP %s: %v", ip, err)
+		} else {
+			ns.logf("[v2] netstack: deregistered IP %s", ip)
 		}
 	}
 	for ip := range ipsToBeAdded {
@@ -145,6 +148,8 @@ func (ns *Impl) updateIPs(nm *netmap.NetworkMap) {
 		}
 		if err != nil {
 			ns.logf("netstack: could not register IP %s: %v", ip, err)
+		} else {
+			ns.logf("[v2] netstack: registered IP %s", ip)
 		}
 	}
 }
@@ -152,7 +157,7 @@ func (ns *Impl) updateIPs(nm *netmap.NetworkMap) {
 func (ns *Impl) dialTCP(address string) (*gonet.TCPConn, error) {
 	remoteIPStr, remotePortStr, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, errors.New("could not parse IP:port: " + err.Error())
+		return nil, fmt.Errorf("could not parse IP:port: %w", err)
 	}
 	remotePort, _ := strconv.Atoi(remotePortStr)
 	remoteIP := net.ParseIP(remoteIPStr)
@@ -175,7 +180,7 @@ func (ns *Impl) injectOutbound() {
 	for {
 		packetInfo, ok := ns.linkEP.ReadContext(context.Background())
 		if !ok {
-			ns.logf("XXX ReadContext-for-write = ok=false")
+			ns.logf("[v2] ReadContext-for-write = ok=false")
 			continue
 		}
 		pkt := packetInfo.Pkt
@@ -187,7 +192,7 @@ func (ns *Impl) injectOutbound() {
 		full = append(full, hdrTransport.View()...)
 		full = append(full, pkt.Data.ToView()...)
 
-		ns.logf("XXX packet Write out: % x", full)
+		ns.logf("[v2] packet Write out: % x", full)
 		if err := ns.tundev.InjectOutbound(full); err != nil {
 			log.Printf("netstack inject outbound: %v", err)
 			return
@@ -204,7 +209,7 @@ func (ns *Impl) injectInbound(p *packet.Parsed, t *tstun.TUN) filter.Response {
 	case 6:
 		pn = header.IPv6ProtocolNumber
 	}
-	ns.logf("XXX packet in (from %v): % x", p.Src, p.Buffer())
+	ns.logf("[v2] packet in (from %v): % x", p.Src, p.Buffer())
 	vv := buffer.View(append([]byte(nil), p.Buffer()...)).ToVectorisedView()
 	packetBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: vv,
@@ -214,7 +219,7 @@ func (ns *Impl) injectInbound(p *packet.Parsed, t *tstun.TUN) filter.Response {
 }
 
 func (ns *Impl) acceptTCP(r *tcp.ForwarderRequest) {
-	ns.logf("XXX ForwarderRequest: %v", r)
+	ns.logf("[v2] ForwarderRequest: %v", r)
 	var wq waiter.Queue
 	ep, err := r.CreateEndpoint(&wq)
 	if err != nil {
@@ -232,7 +237,7 @@ func (ns *Impl) acceptTCP(r *tcp.ForwarderRequest) {
 }
 
 func (ns *Impl) forwardTCP(client *gonet.TCPConn, address string) {
-	ns.logf("netstack: forwarding to address %s", address)
+	ns.logf("[v2] netstack: forwarding to address %s", address)
 	server, err := ns.dialTCP(address)
 	if err != nil {
 		ns.logf("netstack: could not connect to server %s: %s", address, err)
@@ -244,7 +249,7 @@ func (ns *Impl) forwardTCP(client *gonet.TCPConn, address string) {
 }
 
 func (ns *Impl) acceptUDP(r *udp.ForwarderRequest) {
-	ns.logf("XXX UDP ForwarderRequest: %v", r)
+	ns.logf("[v2] UDP ForwarderRequest: %v", r)
 	var wq waiter.Queue
 	ep, err := r.CreateEndpoint(&wq)
 	if err != nil {
