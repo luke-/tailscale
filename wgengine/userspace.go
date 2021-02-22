@@ -150,13 +150,12 @@ type EngineConfig struct {
 	FakeImplFactory FakeImplFactory
 }
 
-// FakeImpl, if non-nil, specifies which type of fake implementation to
-// use. Two values are typical: nil, for a basic ping-only fake
-// implementation, and netstack.Impl, which brings in gvisor's netstack
-// to the binary. The desire to keep that out of some binaries is why
-// this func exists, so wgengine need not depend on gvisor.
+// FakeImpl specifies which type of fake implementation to use. Two values
+// are typical: nil, for a basic ping-only fake implementation, and netstack.Impl,
+// which brings in gvisor's netstack to the binary. The desire to keep that out
+// of some binaries is why this func exists, so wgengine need not depend on gvisor.
 type FakeImpl interface {
-	Run() error
+	Start() error
 }
 
 // FakeImplFactory is the type of a function used to create FakeImpls.
@@ -272,7 +271,7 @@ func newUserspaceEngineAdvanced(conf EngineConfig) (_ Engine, reterr error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := impl.Run(); err != nil {
+			if err := impl.Start(); err != nil {
 				return nil, err
 			}
 		} else {

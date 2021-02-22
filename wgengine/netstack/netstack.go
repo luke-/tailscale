@@ -74,7 +74,7 @@ func Create(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsoc
 	const mtu = 1500
 	linkEP := channel.New(512, mtu, "")
 	if err := ipstack.CreateNIC(nicID, linkEP); err != nil {
-		return nil, errors.New("could not create netstack NIC: " + err.String())
+		return nil, fmt.Errorf("could not create netstack NIC: %w", err)
 	}
 	// Add 0.0.0.0/0 default route.
 	ipv4Subnet, _ := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", 4)), tcpip.AddressMask(strings.Repeat("\x00", 4)))
@@ -100,9 +100,9 @@ func Create(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsoc
 	return ns, nil
 }
 
-// Run sets up all the handlers so netstack can start working. Implements
+// Start sets up all the handlers so netstack can start working. Implements
 // wgengine.FakeImpl.
-func (ns *Impl) Run() error {
+func (ns *Impl) Start() error {
 	ns.e.AddNetworkMapCallback(ns.updateIPs)
 	tcpFwd := tcp.NewForwarder(ns.ipstack, 0, 16, ns.acceptTCP)
 	udpFwd := udp.NewForwarder(ns.ipstack, ns.acceptUDP)
