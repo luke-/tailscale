@@ -14,8 +14,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
-	"strconv"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -232,13 +230,14 @@ func (ns *Impl) acceptTCP(r *tcp.ForwarderRequest) {
 		return
 	}
 	localAddr, err := ep.GetLocalAddress()
+	ns.logf("[v2] forwarding port %v to 100.101.102.103:80", localAddr.Port)
 	if err != nil {
 		r.Complete(true)
 		return
 	}
 	r.Complete(false)
 	c := gonet.NewTCPConn(&wq, ep)
-	go ns.forwardTCP(c, net.JoinHostPort("100.101.102.103", strconv.Itoa(int(localAddr.Port))))
+	go ns.forwardTCP(c, "100.101.102.103:80")
 }
 
 func (ns *Impl) forwardTCP(client *gonet.TCPConn, address string) {
