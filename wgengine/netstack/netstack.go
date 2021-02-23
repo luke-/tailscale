@@ -72,8 +72,8 @@ func Create(logf logger.Logf, tundev *tstun.TUN, e wgengine.Engine, mc *magicsoc
 	})
 	const mtu = 1500
 	linkEP := channel.New(512, mtu, "")
-	if err := ipstack.CreateNIC(nicID, linkEP); err != nil {
-		return nil, fmt.Errorf("could not create netstack NIC: %w", err)
+	if tcpipProblem := ipstack.CreateNIC(nicID, linkEP); tcpipProblem != nil {
+		return nil, fmt.Errorf("could not create netstack NIC: %v", tcpipProblem)
 	}
 	// Add 0.0.0.0/0 default route.
 	ipv4Subnet, _ := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", 4)), tcpip.AddressMask(strings.Repeat("\x00", 4)))
