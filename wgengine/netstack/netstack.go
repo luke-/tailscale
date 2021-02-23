@@ -159,7 +159,7 @@ func (ns *Impl) updateIPs(nm *netmap.NetworkMap) {
 	}
 }
 
-func (ns *Impl) dialTCP(address string) (*gonet.TCPConn, error) {
+func (ns *Impl) dialContextTCP(ctx context.Context, address string) (*gonet.TCPConn, error) {
 	remoteIPPort, err := netaddr.ParseIPPort(address)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse IP:port: %w", err)
@@ -176,7 +176,7 @@ func (ns *Impl) dialTCP(address string) (*gonet.TCPConn, error) {
 		ipType = ipv6.ProtocolNumber
 	}
 
-	return gonet.DialTCP(ns.ipstack, remoteAddress, ipType)
+	return gonet.DialContextTCP(ctx, ns.ipstack, remoteAddress, ipType)
 }
 
 func (ns *Impl) injectOutbound() {
@@ -242,14 +242,28 @@ func (ns *Impl) acceptTCP(r *tcp.ForwarderRequest) {
 
 func (ns *Impl) forwardTCP(client *gonet.TCPConn, address string) {
 	ns.logf("[v2] netstack: forwarding to address %s", address)
-	server, err := ns.dialTCP(address)
+	ctx, cancel := context.WithCancel(context.Background())
+	server, err := ns.dialContextTCP(ctx, address)
 	if err != nil {
 		ns.logf("netstack: could not connect to server %s: %s", address, err)
 		client.Close()
+		cancel()
 		return
 	}
-	go io.Copy(server, client)
-	go io.Copy(client, server)
+	done := make(chan bool)
+	go func() {
+		io.Copy(server, client)
+		done <- true
+	}()
+	go func() {
+		io.Copy(client, server)
+		done <- true
+	}()
+	<-done
+	ns.logf("[v2] netstack: forwarder connection to %s closed", address)
+	cancel()
+	server.Close()
+	client.Close()
 }
 
 func (ns *Impl) acceptUDP(r *udp.ForwarderRequest) {
