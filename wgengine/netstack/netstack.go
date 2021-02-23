@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
+	"inet.af/netaddr"
 	"tailscale.com/net/packet"
 	"tailscale.com/types/logger"
 	"tailscale.com/types/netmap"
@@ -161,19 +162,17 @@ func (ns *Impl) updateIPs(nm *netmap.NetworkMap) {
 }
 
 func (ns *Impl) dialTCP(address string) (*gonet.TCPConn, error) {
-	remoteIPStr, remotePortStr, err := net.SplitHostPort(address)
+	remoteIPPort, err := netaddr.ParseIPPort(address)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse IP:port: %w", err)
 	}
-	remotePort, _ := strconv.Atoi(remotePortStr)
-	remoteIP := net.ParseIP(remoteIPStr)
 	remoteAddress := tcpip.FullAddress{
 		NIC:  nicID,
-		Addr: tcpip.Address(remoteIP),
-		Port: uint16(remotePort),
+		Addr: tcpip.Address(remoteIPPort.TCPAddr().IP),
+		Port: remoteIPPort.Port,
 	}
 	var ipType tcpip.NetworkProtocolNumber
-	if remoteIP.To4() != nil {
+	if remoteIPPort.IP.Is4() {
 		ipType = ipv4.ProtocolNumber
 	} else {
 		ipType = ipv6.ProtocolNumber
